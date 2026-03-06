@@ -39,13 +39,10 @@ class DeviceOpsError(Exception):
     pass
 
 
-async def detect_device():
-    """
-    检测 USB 连接的 iOS 设备。
-    返回 dict: {lockdown, name, version, product_type, display_name, udid, dev_mode, ddi_mounted}
-    """
+async def _create_lockdown(udid=None):
+    """创建 USB lockdown 连接，复用连接异常处理逻辑。"""
     try:
-        lockdown = await create_using_usbmux(connection_type='USB')
+        return await create_using_usbmux(identifier=udid, connection_type='USB')
     except ConnectionFailedError:
         raise DeviceOpsError(
             "无法连接到 usbmuxd 服务。\n"
@@ -60,6 +57,14 @@ async def detect_device():
         raise DeviceOpsError("设备未配对。\n请解锁设备并点击「信任此电脑」。")
     except Exception as e:
         raise DeviceOpsError(f"连接设备时发生错误：{e}")
+
+
+async def detect_device():
+    """
+    检测 USB 连接的 iOS 设备。
+    返回 dict: {name, version, product_type, display_name, udid, dev_mode, ddi_mounted}
+    """
+    lockdown = await _create_lockdown()
 
     all_vals = lockdown.all_values
     ios_version = lockdown.product_version
@@ -83,7 +88,6 @@ async def detect_device():
         pass
 
     return {
-        'lockdown': lockdown,
         'name': all_vals.get('DeviceName', '未知'),
         'version': ios_version,
         'product_type': lockdown.product_type,
@@ -94,12 +98,13 @@ async def detect_device():
     }
 
 
-async def enable_dev_mode(lockdown):
+async def enable_dev_mode(udid):
     """
     开启开发者模式。此函数会阻塞直到设备重启并确认完成。
     返回成功消息字符串。
     """
     try:
+        lockdown = await _create_lockdown(udid)
         amfi = AmfiService(lockdown)
         await amfi.enable_developer_mode(enable_post_restart=True)
         return "开发者模式已成功开启。"
@@ -155,12 +160,13 @@ def _find_bundled_personalized():
     return None
 
 
-async def mount_ddi(lockdown):
+async def mount_ddi(udid):
     """
     挂载开发者磁盘映像 (DDI)。
     优先使用内置的 DDI 文件，无需网络下载。
     返回成功消息字符串。
     """
+    lockdown = await _create_lockdown(udid)
     ios_version = lockdown.product_version
 
     try:

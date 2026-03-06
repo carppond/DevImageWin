@@ -27,7 +27,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("iOS 开发者设置工具")
         self.setFixedSize(480, 420)
 
-        self._lockdown = None
+        self._udid = None
         self._worker = None
 
         central = QWidget()
@@ -119,7 +119,7 @@ class MainWindow(QMainWindow):
         self._worker.start()
 
     def _on_device_detected(self, result):
-        self._lockdown = result['lockdown']
+        self._udid = result['udid']
 
         self.lbl_name.setText(result['name'])
         self.lbl_version.setText(result['version'])
@@ -145,10 +145,10 @@ class MainWindow(QMainWindow):
     # ---------- 开启开发者模式 ----------
 
     def _on_enable_devmode_clicked(self):
-        if self._lockdown is None:
+        if self._udid is None:
             return
         self._set_all_buttons_enabled(False)
-        self._worker = EnableDevModeWorker(self._lockdown, self)
+        self._worker = EnableDevModeWorker(self._udid, self)
         self._worker.finished.connect(self._on_devmode_enabled)
         self._worker.error.connect(self._on_devmode_error)
         self._worker.progress.connect(self._on_progress)
@@ -157,8 +157,8 @@ class MainWindow(QMainWindow):
     def _on_devmode_enabled(self, result):
         self.status_bar.showMessage(result.get('message', '开发者模式已开启'))
         QMessageBox.information(self, "成功", result.get('message', '开发者模式已开启'))
-        # lockdown 对象在设备重启后已失效，需要重新检测
-        self._lockdown = None
+        # 设备重启后需要重新检测
+        self._udid = None
         self._on_detect_clicked()
 
     def _on_devmode_error(self, msg):
@@ -169,10 +169,10 @@ class MainWindow(QMainWindow):
     # ---------- 挂载 DDI ----------
 
     def _on_mount_ddi_clicked(self):
-        if self._lockdown is None:
+        if self._udid is None:
             return
         self._set_all_buttons_enabled(False)
-        self._worker = MountDDIWorker(self._lockdown, self)
+        self._worker = MountDDIWorker(self._udid, self)
         self._worker.finished.connect(self._on_ddi_mounted)
         self._worker.error.connect(self._on_ddi_error)
         self._worker.progress.connect(self._on_progress)
