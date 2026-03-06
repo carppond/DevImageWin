@@ -65,7 +65,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='iOS开发者设置工具',
+    name='DevImageWin',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
