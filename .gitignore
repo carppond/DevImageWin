@@ -5,3 +5,5 @@ dist/
 build/
 *.spec.bak
 ddi_data/
+ddi_data.zip
+screenshot.png

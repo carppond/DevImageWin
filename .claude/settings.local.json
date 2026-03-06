@@ -10,7 +10,8 @@
       "Bash(pip install:*)",
       "Bash(sort -k2)",
       "Bash(python:*)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(zip:*)"
     ]
   }
 }
