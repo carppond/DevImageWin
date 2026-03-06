@@ -9,7 +9,8 @@
       "Bash(echo NOT INSTALLED:*)",
       "Bash(pip install:*)",
       "Bash(sort -k2)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(gh api:*)"
     ]
   }
 }
