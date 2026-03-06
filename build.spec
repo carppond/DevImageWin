@@ -43,8 +43,6 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        'IPython',
-        'xonsh',
         'uvicorn',
         'fastapi',
         'starlette',
