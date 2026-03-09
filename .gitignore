@@ -7,3 +7,4 @@ build/
 ddi_data/
 ddi_data.zip
 screenshot.png
+*.claude_resumes.txt

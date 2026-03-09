@@ -22,7 +22,7 @@ python -m PyInstaller build.spec --clean --noconfirm     # output: dist/DevImage
 Or run `build.bat` which does all steps in sequence.
 
 ### CI Build
-GitHub Actions (`.github/workflows/build.yml`) runs on `windows-latest`. Triggered on push to `master`, `v*` tags, or `workflow_dispatch`. On tag push, creates a GitHub Release with the EXE.
+GitHub Actions (`.github/workflows/build.yml`) runs on `windows-latest`. Triggered on `v*` tag push or `workflow_dispatch` (manual). Normal push to `master` does NOT trigger CI. On tag push, creates a GitHub Release with the EXE.
 
 CI does three extra things not needed locally:
 1. Downloads `ddi_data.zip` from the GitHub release tagged `ddi-data`
