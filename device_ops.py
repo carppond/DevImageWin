@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import sys
+import time
 from pathlib import Path
 
 from packaging.version import Version
@@ -18,6 +20,7 @@ from pymobiledevice3.exceptions import (
 )
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.services.amfi import AmfiService
+from pymobiledevice3.services.heartbeat import HeartbeatService
 from pymobiledevice3.services.mobile_image_mounter import (
     DeveloperDiskImageMounter,
     PersonalizedImageMounter,
@@ -100,16 +103,54 @@ async def detect_device():
     }
 
 
+def _wait_for_device_reconnect(udid, timeout=120):
+    """等待设备重启后重新连接（同步轮询，使用自定义 local_hostname）"""
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            lockdown = create_using_usbmux(
+                serial=udid, connection_type='USB', local_hostname='DevImageWin'
+            )
+            return lockdown
+        except Exception:
+            time.sleep(3)
+    return None
+
+
 async def enable_dev_mode(udid):
     """
-    开启开发者模式。此函数会阻塞直到设备重启并确认完成。
-    返回成功消息字符串。
+    开启开发者模式。
+    手动处理重启后重连，避免 pymobiledevice3 内部重连时的 WinError 52。
     """
     try:
         lockdown = await _create_lockdown(udid)
         amfi = AmfiService(lockdown)
-        await amfi.enable_developer_mode(enable_post_restart=True)
+
+        # 第 1 步：发送开启命令（不等待重启后确认）
+        await amfi.enable_developer_mode(enable_post_restart=False)
+
+        # 第 2 步：等待设备断开连接（重启）
+        try:
+            HeartbeatService(lockdown).start()
+        except (ConnectionAbortedError, BrokenPipeError, OSError):
+            pass
+
+        # 第 3 步：用自定义 hostname 重连设备
+        new_lockdown = _wait_for_device_reconnect(udid, timeout=120)
+        if new_lockdown is None:
+            raise DeviceOpsError(
+                "设备重启后重连超时。\n"
+                "请解锁设备后重新点击「检测设备」。"
+            )
+
+        # 第 4 步：确认开发者模式
+        new_amfi = AmfiService(new_lockdown)
+        new_amfi.enable_developer_mode_post_restart()
+
         return "开发者模式已成功开启。"
+
+    except DeviceOpsError:
+        raise
     except DeviceHasPasscodeSetError:
         raise DeviceOpsError(
             "设备设置了锁屏密码，无法自动开启开发者模式。\n"
@@ -123,7 +164,7 @@ async def enable_dev_mode(udid):
     except (ConnectionAbortedError, BrokenPipeError, ConnectionTerminatedError):
         raise DeviceOpsError(
             "设备连接中断。\n"
-            "设备可能正在重启，请等待重启完成后重新检测设备。"
+            "请等待设备重启完成后，解锁设备并重新检测。"
         )
     except Exception as e:
         raise DeviceOpsError(f"开启开发者模式时发生错误：{e}")
