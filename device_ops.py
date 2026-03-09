@@ -110,17 +110,17 @@ async def detect_device():
     }
 
 
-def _wait_for_device_disconnect(udid, timeout=30):
+async def _wait_for_device_disconnect(udid, timeout=30):
     """等待设备真正断开连接（轮询直到连不上为止）"""
     start = time.time()
     while time.time() - start < timeout:
         elapsed = int(time.time() - start)
         try:
-            create_using_usbmux(
+            lk = await create_using_usbmux(
                 serial=udid, connection_type='USB', local_hostname='DevImageWin'
             )
             logger.debug(f"_wait_disconnect: {elapsed}s - 设备仍在线")
-            time.sleep(1)
+            await asyncio.sleep(1)
         except Exception as e:
             logger.info(f"_wait_disconnect: {elapsed}s - 设备已断开: {type(e).__name__}")
             return True
@@ -128,20 +128,20 @@ def _wait_for_device_disconnect(udid, timeout=30):
     return False
 
 
-def _wait_for_device_reconnect(udid, timeout=120):
-    """等待设备重启后重新连接（同步轮询，使用自定义 local_hostname）"""
+async def _wait_for_device_reconnect(udid, timeout=120):
+    """等待设备重启后重新连接（轮询，使用自定义 local_hostname）"""
     start = time.time()
     while time.time() - start < timeout:
         elapsed = int(time.time() - start)
         try:
-            lockdown = create_using_usbmux(
+            lockdown = await create_using_usbmux(
                 serial=udid, connection_type='USB', local_hostname='DevImageWin'
             )
             logger.info(f"_wait_reconnect: {elapsed}s - 设备已重连!")
             return lockdown
         except Exception as e:
             logger.debug(f"_wait_reconnect: {elapsed}s - 等待中: {type(e).__name__}")
-            time.sleep(3)
+            await asyncio.sleep(3)
     logger.warning(f"_wait_reconnect: {timeout}s 超时")
     return None
 
@@ -163,12 +163,12 @@ async def enable_dev_mode(udid):
 
         # 第 2 步：等设备真正断开（确认已开始重启）
         logger.info("enable_dev_mode: [2/5] 等待设备断开...")
-        disconnected = _wait_for_device_disconnect(udid, timeout=30)
+        disconnected = await _wait_for_device_disconnect(udid, timeout=30)
         logger.info(f"enable_dev_mode: [2/5] 断开结果: {disconnected}")
 
         # 第 3 步：等设备重启完成后重连
         logger.info("enable_dev_mode: [3/5] 等待设备重连...")
-        new_lockdown = _wait_for_device_reconnect(udid, timeout=120)
+        new_lockdown = await _wait_for_device_reconnect(udid, timeout=120)
         if new_lockdown is None:
             logger.error("enable_dev_mode: [3/5] 重连超时")
             raise DeviceOpsError(
@@ -184,7 +184,10 @@ async def enable_dev_mode(udid):
         # 第 5 步：确认开发者模式
         logger.info("enable_dev_mode: [5/5] 发送 post_restart 确认...")
         new_amfi = AmfiService(new_lockdown)
-        new_amfi.enable_developer_mode_post_restart()
+        result = new_amfi.enable_developer_mode_post_restart()
+        # 兼容 async 版本
+        if asyncio.iscoroutine(result):
+            await result
         logger.info("enable_dev_mode: [5/5] 确认成功!")
 
         # 验证
