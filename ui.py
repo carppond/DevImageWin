@@ -214,11 +214,17 @@ class MainWindow(QMainWindow):
         self._worker.start()
 
     def _on_devmode_enabled(self, result):
-        self.status_bar.showMessage(result.get('message', '开发者模式已开启'))
-        QMessageBox.information(self, "成功", result.get('message', '开发者模式已开启'))
-        # 设备重启后需要重新检测
         self._udid = None
-        self._on_detect_clicked()
+        self.btn_detect.setEnabled(True)
+        self.btn_enable_devmode.setEnabled(False)
+        self.btn_mount_ddi.setEnabled(False)
+        self.status_bar.showMessage("开发者模式已开启，等待设备重启后请点击「检测设备」")
+        QMessageBox.information(
+            self, "成功",
+            result.get('message', '开发者模式已开启。') + "\n\n"
+            "设备可能会再次重启，请等待重启完成并解锁后，\n"
+            "点击「检测设备」继续操作。"
+        )
 
     def _on_devmode_error(self, msg):
         self._update_buttons_by_state(False, False)
