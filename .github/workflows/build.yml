@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller pymobiledevice3 PySide6 IPython
+          pip install pyinstaller pymobiledevice3 PySide6 IPython pyimg4 ipsw_parser
 
       - name: Download DDI data from release
         env:
@@ -41,8 +41,17 @@ jobs:
           Invoke-WebRequest -Uri "https://www.apple.com/itunes/download/win64" -OutFile iTunes64Setup.exe
           Write-Host "Extracting MSI..."
           Start-Process -FilePath "iTunes64Setup.exe" -ArgumentList "/extract `"$PWD\itunes_extracted`"" -Wait -NoNewWindow
+          Write-Host "Extracted files:"
+          Get-ChildItem -Path itunes_extracted -Recurse | ForEach-Object { Write-Host $_.FullName }
           New-Item -ItemType Directory -Path "apple_driver" -Force
-          Copy-Item "itunes_extracted\AppleMobileDeviceSupport64.msi" "apple_driver\"
+          $msi = Get-ChildItem -Path itunes_extracted -Filter "*MobileDevice*" -Recurse | Select-Object -First 1
+          if ($msi) {
+            Write-Host "Found: $($msi.FullName)"
+            Copy-Item $msi.FullName "apple_driver\AppleMobileDeviceSupport64.msi"
+          } else {
+            Write-Host "AppleMobileDeviceSupport not found, copying all MSI files..."
+            Copy-Item "itunes_extracted\*.msi" "apple_driver\" -ErrorAction SilentlyContinue
+          }
           dir apple_driver
           Remove-Item -Recurse -Force itunes_extracted, iTunes64Setup.exe
 
