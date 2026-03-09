@@ -12,7 +12,10 @@
       "Bash(python:*)",
       "Bash(gh api:*)",
       "Bash(zip:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(git tag:*)",
+      "Bash(git push:*)",
+      "Bash(git add:*)"
     ]
   }
 }
