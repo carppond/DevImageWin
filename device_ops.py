@@ -44,10 +44,13 @@ class DeviceOpsError(Exception):
 
 async def _create_lockdown(udid=None):
     """创建 USB lockdown 连接，复用连接异常处理逻辑。"""
+    logger.info(f"_create_lockdown: udid={udid}")
     try:
-        return await create_using_usbmux(
+        lockdown = await create_using_usbmux(
             identifier=udid, connection_type='USB', local_hostname='DevImageWin'
         )
+        logger.info(f"_create_lockdown: 连接成功, udid={lockdown.udid}, version={lockdown.product_version}")
+        return lockdown
     except ConnectionFailedError:
         raise DeviceOpsError(
             "无法连接到 usbmuxd 服务。\n"
@@ -69,17 +72,20 @@ async def detect_device():
     检测 USB 连接的 iOS 设备。
     返回 dict: {name, version, product_type, display_name, udid, dev_mode, ddi_mounted}
     """
+    logger.info("detect_device: 开始检测...")
     lockdown = await _create_lockdown()
 
     all_vals = lockdown.all_values
     ios_version = lockdown.product_version
+    logger.info(f"detect_device: 设备={all_vals.get('DeviceName')}, iOS={ios_version}")
 
     # 检查开发者模式状态
     dev_mode = False
     try:
         dev_mode = await lockdown.get_developer_mode_status()
-    except Exception:
-        pass
+        logger.info(f"detect_device: developer_mode_status={dev_mode}")
+    except Exception as e:
+        logger.warning(f"detect_device: 获取开发者模式状态失败: {e}")
 
     # 检查 DDI 挂载状态
     ddi_mounted = False
@@ -89,8 +95,9 @@ async def detect_device():
             ddi_mounted = await mounter.is_image_mounted('Personalized')
         else:
             ddi_mounted = await mounter.is_image_mounted('Developer')
-    except Exception:
-        pass
+        logger.info(f"detect_device: ddi_mounted={ddi_mounted}")
+    except Exception as e:
+        logger.warning(f"detect_device: 获取DDI状态失败: {e}")
 
     return {
         'name': all_vals.get('DeviceName', '未知'),
@@ -107,15 +114,17 @@ def _wait_for_device_disconnect(udid, timeout=30):
     """等待设备真正断开连接（轮询直到连不上为止）"""
     start = time.time()
     while time.time() - start < timeout:
+        elapsed = int(time.time() - start)
         try:
             create_using_usbmux(
                 serial=udid, connection_type='USB', local_hostname='DevImageWin'
             )
-            # 还能连上，设备还没断开
+            logger.debug(f"_wait_disconnect: {elapsed}s - 设备仍在线")
             time.sleep(1)
-        except Exception:
-            # 连不上了，设备已断开
+        except Exception as e:
+            logger.info(f"_wait_disconnect: {elapsed}s - 设备已断开: {type(e).__name__}")
             return True
+    logger.warning(f"_wait_disconnect: {timeout}s 超时，设备未断开")
     return False
 
 
@@ -123,13 +132,17 @@ def _wait_for_device_reconnect(udid, timeout=120):
     """等待设备重启后重新连接（同步轮询，使用自定义 local_hostname）"""
     start = time.time()
     while time.time() - start < timeout:
+        elapsed = int(time.time() - start)
         try:
             lockdown = create_using_usbmux(
                 serial=udid, connection_type='USB', local_hostname='DevImageWin'
             )
+            logger.info(f"_wait_reconnect: {elapsed}s - 设备已重连!")
             return lockdown
-        except Exception:
+        except Exception as e:
+            logger.debug(f"_wait_reconnect: {elapsed}s - 等待中: {type(e).__name__}")
             time.sleep(3)
+    logger.warning(f"_wait_reconnect: {timeout}s 超时")
     return None
 
 
@@ -139,31 +152,47 @@ async def enable_dev_mode(udid):
     手动处理重启后重连，避免 pymobiledevice3 内部重连时的 WinError 52。
     """
     try:
+        logger.info(f"enable_dev_mode: 开始, udid={udid}")
         lockdown = await _create_lockdown(udid)
         amfi = AmfiService(lockdown)
 
         # 第 1 步：发送开启命令（不等待重启后确认）
+        logger.info("enable_dev_mode: [1/5] 发送开启命令...")
         await amfi.enable_developer_mode(enable_post_restart=False)
+        logger.info("enable_dev_mode: [1/5] 命令发送成功")
 
         # 第 2 步：等设备真正断开（确认已开始重启）
-        logger.info("等待设备断开连接...")
-        _wait_for_device_disconnect(udid, timeout=30)
+        logger.info("enable_dev_mode: [2/5] 等待设备断开...")
+        disconnected = _wait_for_device_disconnect(udid, timeout=30)
+        logger.info(f"enable_dev_mode: [2/5] 断开结果: {disconnected}")
 
         # 第 3 步：等设备重启完成后重连
-        logger.info("等待设备重启后重连...")
+        logger.info("enable_dev_mode: [3/5] 等待设备重连...")
         new_lockdown = _wait_for_device_reconnect(udid, timeout=120)
         if new_lockdown is None:
+            logger.error("enable_dev_mode: [3/5] 重连超时")
             raise DeviceOpsError(
                 "设备重启后重连超时。\n"
                 "请解锁设备后重新点击「检测设备」。"
             )
+        logger.info(f"enable_dev_mode: [3/5] 重连成功, version={new_lockdown.product_version}")
 
         # 第 4 步：等几秒让系统服务完全就绪
+        logger.info("enable_dev_mode: [4/5] 等待服务就绪 (5秒)...")
         time.sleep(5)
 
         # 第 5 步：确认开发者模式
+        logger.info("enable_dev_mode: [5/5] 发送 post_restart 确认...")
         new_amfi = AmfiService(new_lockdown)
         new_amfi.enable_developer_mode_post_restart()
+        logger.info("enable_dev_mode: [5/5] 确认成功!")
+
+        # 验证
+        try:
+            final_status = new_lockdown.developer_mode_status
+            logger.info(f"enable_dev_mode: 最终验证 developer_mode_status={final_status}")
+        except Exception as e:
+            logger.warning(f"enable_dev_mode: 验证失败: {e}")
 
         return "开发者模式已成功开启。"
 
@@ -227,8 +256,10 @@ async def mount_ddi(udid):
     优先使用内置的 DDI 文件，无需网络下载。
     返回成功消息字符串。
     """
+    logger.info(f"mount_ddi: 开始, udid={udid}")
     lockdown = await _create_lockdown(udid)
     ios_version = lockdown.product_version
+    logger.info(f"mount_ddi: iOS={ios_version}")
 
     try:
         if Version(ios_version) < Version('17.0'):
