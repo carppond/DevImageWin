@@ -190,13 +190,6 @@ async def enable_dev_mode(udid):
             await result
         logger.info("enable_dev_mode: [5/5] 确认成功!")
 
-        # 验证
-        try:
-            final_status = new_lockdown.developer_mode_status
-            logger.info(f"enable_dev_mode: 最终验证 developer_mode_status={final_status}")
-        except Exception as e:
-            logger.warning(f"enable_dev_mode: 验证失败: {e}")
-
         return "开发者模式已成功开启。"
 
     except DeviceOpsError:
