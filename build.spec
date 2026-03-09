@@ -6,6 +6,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('ddi_data', 'ddi_data'),
+        ('apple_driver', 'apple_driver'),
     ],
     hiddenimports=[
         'pymobiledevice3',

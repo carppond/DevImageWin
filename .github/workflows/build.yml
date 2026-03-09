@@ -34,6 +34,18 @@ jobs:
           python -m zipfile -e ddi_data.zip .
           dir ddi_data
 
+      - name: Download and extract Apple Mobile Device Support
+        shell: pwsh
+        run: |
+          Write-Host "Downloading iTunes installer..."
+          Invoke-WebRequest -Uri "https://www.apple.com/itunes/download/win64" -OutFile iTunes64Setup.exe
+          Write-Host "Extracting MSI..."
+          Start-Process -FilePath "iTunes64Setup.exe" -ArgumentList "/extract `"$PWD\itunes_extracted`"" -Wait -NoNewWindow
+          New-Item -ItemType Directory -Path "apple_driver" -Force
+          Copy-Item "itunes_extracted\AppleMobileDeviceSupport64.msi" "apple_driver\"
+          dir apple_driver
+          Remove-Item -Recurse -Force itunes_extracted, iTunes64Setup.exe
+
       - name: Build EXE
         run: python -m PyInstaller build.spec --clean --noconfirm
 

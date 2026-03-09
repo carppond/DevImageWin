@@ -1,3 +1,5 @@
+import platform
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QGroupBox,
@@ -11,6 +13,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from usbmux_check import (
+    get_bundled_msi_path,
+    install_apple_driver,
+    is_usbmuxd_available,
+    try_start_apple_service,
+)
 from workers import DetectDeviceWorker, EnableDevModeWorker, MountDDIWorker
 
 # 状态指示器 HTML
@@ -108,9 +116,60 @@ class MainWindow(QMainWindow):
         self.btn_enable_devmode.setEnabled(not dev_mode)
         self.btn_mount_ddi.setEnabled(dev_mode and not ddi_mounted)
 
+    # ---------- 驱动检测 ----------
+
+    def _check_usbmuxd(self) -> bool:
+        """检查 usbmuxd 服务，不可用时自动安装内置驱动"""
+        if platform.system() != "Windows" or is_usbmuxd_available():
+            return True
+
+        self.status_bar.showMessage("正在尝试启动 Apple Mobile Device Service...")
+        if try_start_apple_service():
+            return True
+
+        # 检查是否有内置驱动
+        if get_bundled_msi_path() is None:
+            QMessageBox.warning(
+                self,
+                "缺少 Apple 设备驱动",
+                "未检测到 Apple Mobile Device Service，\n"
+                "且程序内未包含驱动安装包。\n\n"
+                "请手动安装 iTunes 或 Apple Devices 应用。",
+            )
+            return False
+
+        reply = QMessageBox.question(
+            self,
+            "缺少 Apple 设备驱动",
+            "未检测到 Apple 设备驱动，首次使用需要安装。\n\n"
+            "点击「是」自动安装（需要管理员权限）。",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return False
+
+        self.btn_detect.setEnabled(False)
+        self.status_bar.showMessage("正在安装 Apple 设备驱动，请在弹出的权限确认中点击「是」...")
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+
+        success, msg = install_apple_driver()
+        if success:
+            self.status_bar.showMessage(msg)
+            QMessageBox.information(self, "安装成功", msg)
+            return True
+        else:
+            self.btn_detect.setEnabled(True)
+            self.status_bar.showMessage("驱动安装失败")
+            QMessageBox.warning(self, "安装失败", msg)
+            return False
+
     # ---------- 检测设备 ----------
 
     def _on_detect_clicked(self):
+        if not self._check_usbmuxd():
+            self.status_bar.showMessage("请先安装 Apple 设备驱动")
+            return
         self._set_all_buttons_enabled(False)
         self._worker = DetectDeviceWorker(self)
         self._worker.finished.connect(self._on_device_detected)
