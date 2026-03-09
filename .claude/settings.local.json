@@ -11,7 +11,8 @@
       "Bash(sort -k2)",
       "Bash(python:*)",
       "Bash(gh api:*)",
-      "Bash(zip:*)"
+      "Bash(zip:*)",
+      "Bash(ls:*)"
     ]
   }
 }

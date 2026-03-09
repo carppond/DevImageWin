@@ -83,15 +83,15 @@ class MainWindow(QMainWindow):
         devmode_layout.addWidget(self.btn_enable_devmode)
         layout.addWidget(devmode_group)
 
-        # ---- DDI ----
-        ddi_group = QGroupBox("开发者磁盘映像 (DDI)")
+        # ---- 开发者磁盘映像 ----
+        ddi_group = QGroupBox("开发者磁盘映像")
         ddi_layout = QVBoxLayout(ddi_group)
 
         self.lbl_ddi_status = QLabel(STATUS_UNKNOWN)
         self.lbl_ddi_status.setTextFormat(Qt.RichText)
         ddi_layout.addWidget(self.lbl_ddi_status)
 
-        self.btn_mount_ddi = QPushButton("挂载 DDI")
+        self.btn_mount_ddi = QPushButton("挂载磁盘映像")
         self.btn_mount_ddi.setEnabled(False)
         self.btn_mount_ddi.clicked.connect(self._on_mount_ddi_clicked)
         ddi_layout.addWidget(self.btn_mount_ddi)
@@ -231,7 +231,7 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("开启开发者模式失败")
         QMessageBox.warning(self, "操作失败", msg)
 
-    # ---------- 挂载 DDI ----------
+    # ---------- 挂载磁盘映像 ----------
 
     def _on_mount_ddi_clicked(self):
         if self._udid is None:
@@ -245,15 +245,24 @@ class MainWindow(QMainWindow):
 
     def _on_ddi_mounted(self, result):
         self.lbl_ddi_status.setText(STATUS_MOUNTED)
-        msg = result.get('message', 'DDI 挂载成功')
+        msg = result.get('message', '磁盘映像挂载成功')
         self.status_bar.showMessage(msg)
         self._update_buttons_by_state(True, True)
         QMessageBox.information(self, "成功", msg)
 
     def _on_ddi_error(self, msg):
-        self._update_buttons_by_state(True, False)
-        self.status_bar.showMessage("DDI 挂载失败")
-        QMessageBox.warning(self, "操作失败", msg)
+        self.status_bar.showMessage("磁盘映像挂载失败")
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle("操作失败")
+        box.setText(msg)
+        retry_btn = box.addButton("重试", QMessageBox.AcceptRole)
+        box.addButton("关闭", QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() == retry_btn:
+            self._on_mount_ddi_clicked()
+        else:
+            self._update_buttons_by_state(True, False)
 
     # ---------- 进度 ----------
 

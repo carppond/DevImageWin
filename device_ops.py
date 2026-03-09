@@ -3,8 +3,10 @@ import logging
 import sys
 import time
 from pathlib import Path
+from urllib.error import URLError
 
 from packaging.version import Version
+from requests.exceptions import ConnectionError as RequestsConnectionError, ProxyError
 
 from pymobiledevice3.exceptions import (
     AlreadyMountedError,
@@ -285,6 +287,17 @@ async def mount_ddi(udid):
         raise DeviceOpsError("挂载失败：开发者模式未开启。\n请先开启开发者模式。")
     except DeviceOpsError:
         raise
+    except (RequestsConnectionError, ProxyError, URLError, ConnectionRefusedError, OSError) as e:
+        err_str = str(e)
+        logger.error(f"mount_ddi: 网络错误: {err_str}")
+        raise DeviceOpsError(
+            "连接 Apple 服务器失败。\n"
+            "iOS 17+ 挂载 DDI 需要联网获取 Apple 签名。\n\n"
+            "请检查：\n"
+            "1. 电脑是否可以正常上网\n"
+            "2. 如果使用了代理（Clash/V2Ray 等），请确保代理软件已启动\n"
+            "3. 尝试关闭代理后重试"
+        )
     except (ConnectionAbortedError, BrokenPipeError, ConnectionTerminatedError):
         raise DeviceOpsError("设备连接中断。\n请重新检测设备后重试。")
     except Exception as e:
