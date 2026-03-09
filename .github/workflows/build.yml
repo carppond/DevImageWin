@@ -38,21 +38,25 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Downloading iTunes installer..."
-          Invoke-WebRequest -Uri "https://www.apple.com/itunes/download/win64" -OutFile iTunes64Setup.exe
-          Write-Host "Extracting MSI..."
-          Start-Process -FilePath "iTunes64Setup.exe" -ArgumentList "/extract `"$PWD\itunes_extracted`"" -Wait -NoNewWindow
-          Write-Host "Extracted files:"
-          Get-ChildItem -Path itunes_extracted -Recurse | ForEach-Object { Write-Host $_.FullName }
-          New-Item -ItemType Directory -Path "apple_driver" -Force
+          curl -L -o iTunes64Setup.exe "https://www.apple.com/itunes/download/win64"
+          $size = (Get-Item iTunes64Setup.exe).Length / 1MB
+          Write-Host "Downloaded: $([math]::Round($size, 1)) MB"
+
+          Write-Host "Extracting with 7-Zip..."
+          7z x iTunes64Setup.exe -oitunes_extracted -y
+
+          Write-Host "Extracted contents:"
+          Get-ChildItem -Path itunes_extracted -Recurse -Name
+
+          New-Item -ItemType Directory -Path "apple_driver" -Force | Out-Null
           $msi = Get-ChildItem -Path itunes_extracted -Filter "*MobileDevice*" -Recurse | Select-Object -First 1
           if ($msi) {
-            Write-Host "Found: $($msi.FullName)"
+            Write-Host "Found driver: $($msi.Name) ($([math]::Round($msi.Length / 1MB, 1)) MB)"
             Copy-Item $msi.FullName "apple_driver\AppleMobileDeviceSupport64.msi"
           } else {
-            Write-Host "AppleMobileDeviceSupport not found, copying all MSI files..."
-            Copy-Item "itunes_extracted\*.msi" "apple_driver\" -ErrorAction SilentlyContinue
+            Write-Host "ERROR: AppleMobileDeviceSupport MSI not found in extracted files"
+            exit 1
           }
-          dir apple_driver
           Remove-Item -Recurse -Force itunes_extracted, iTunes64Setup.exe
 
       - name: Build EXE
