@@ -103,6 +103,22 @@ async def detect_device():
     }
 
 
+def _wait_for_device_disconnect(udid, timeout=30):
+    """等待设备真正断开连接（轮询直到连不上为止）"""
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            create_using_usbmux(
+                serial=udid, connection_type='USB', local_hostname='DevImageWin'
+            )
+            # 还能连上，设备还没断开
+            time.sleep(1)
+        except Exception:
+            # 连不上了，设备已断开
+            return True
+    return False
+
+
 def _wait_for_device_reconnect(udid, timeout=120):
     """等待设备重启后重新连接（同步轮询，使用自定义 local_hostname）"""
     start = time.time()
@@ -129,13 +145,12 @@ async def enable_dev_mode(udid):
         # 第 1 步：发送开启命令（不等待重启后确认）
         await amfi.enable_developer_mode(enable_post_restart=False)
 
-        # 第 2 步：等待设备断开连接（重启）
-        try:
-            HeartbeatService(lockdown).start()
-        except (ConnectionAbortedError, BrokenPipeError, OSError):
-            pass
+        # 第 2 步：等设备真正断开（确认已开始重启）
+        logger.info("等待设备断开连接...")
+        _wait_for_device_disconnect(udid, timeout=30)
 
-        # 第 3 步：用自定义 hostname 重连设备
+        # 第 3 步：等设备重启完成后重连
+        logger.info("等待设备重启后重连...")
         new_lockdown = _wait_for_device_reconnect(udid, timeout=120)
         if new_lockdown is None:
             raise DeviceOpsError(
@@ -143,7 +158,10 @@ async def enable_dev_mode(udid):
                 "请解锁设备后重新点击「检测设备」。"
             )
 
-        # 第 4 步：确认开发者模式
+        # 第 4 步：等几秒让系统服务完全就绪
+        time.sleep(5)
+
+        # 第 5 步：确认开发者模式
         new_amfi = AmfiService(new_lockdown)
         new_amfi.enable_developer_mode_post_restart()
 
