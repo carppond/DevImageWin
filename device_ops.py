@@ -42,7 +42,9 @@ class DeviceOpsError(Exception):
 async def _create_lockdown(udid=None):
     """创建 USB lockdown 连接，复用连接异常处理逻辑。"""
     try:
-        return await create_using_usbmux(identifier=udid, connection_type='USB')
+        return await create_using_usbmux(
+            identifier=udid, connection_type='USB', local_hostname='DevImageWin'
+        )
     except ConnectionFailedError:
         raise DeviceOpsError(
             "无法连接到 usbmuxd 服务。\n"
