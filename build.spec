@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import copy_metadata
 
 a = Analysis(
     ['main.py'],
@@ -7,8 +8,12 @@ a = Analysis(
     datas=[
         ('ddi_data', 'ddi_data'),
         ('apple_driver', 'apple_driver'),
+        *copy_metadata('pyimg4'),
+        *copy_metadata('ipsw_parser'),
     ],
     hiddenimports=[
+        'pyimg4',
+        'ipsw_parser',
         'pymobiledevice3',
         'pymobiledevice3.lockdown',
         'pymobiledevice3.usbmux',

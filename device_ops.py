@@ -1,9 +1,6 @@
-import asyncio
 import logging
-import os
 import sys
 from pathlib import Path
-from urllib.error import URLError
 
 from packaging.version import Version
 
@@ -12,7 +9,6 @@ from pymobiledevice3.exceptions import (
     AmfiError,
     ConnectionFailedError,
     ConnectionTerminatedError,
-    DeveloperDiskImageNotFoundError,
     DeveloperModeError,
     DeveloperModeIsNotEnabledError,
     DeviceHasPasscodeSetError,
@@ -43,13 +39,10 @@ class DeviceOpsError(Exception):
     pass
 
 
-def detect_device():
-    """
-    检测 USB 连接的 iOS 设备。
-    返回 dict: {lockdown, name, version, product_type, display_name, udid, dev_mode, ddi_mounted}
-    """
+async def _create_lockdown(udid=None):
+    """创建 USB lockdown 连接，复用连接异常处理逻辑。"""
     try:
-        lockdown = create_using_usbmux(connection_type='USB')
+        return await create_using_usbmux(identifier=udid, connection_type='USB')
     except ConnectionFailedError:
         raise DeviceOpsError(
             "无法连接到 usbmuxd 服务。\n"
@@ -65,13 +58,21 @@ def detect_device():
     except Exception as e:
         raise DeviceOpsError(f"连接设备时发生错误：{e}")
 
+
+async def detect_device():
+    """
+    检测 USB 连接的 iOS 设备。
+    返回 dict: {name, version, product_type, display_name, udid, dev_mode, ddi_mounted}
+    """
+    lockdown = await _create_lockdown()
+
     all_vals = lockdown.all_values
     ios_version = lockdown.product_version
 
     # 检查开发者模式状态
     dev_mode = False
     try:
-        dev_mode = lockdown.developer_mode_status
+        dev_mode = await lockdown.get_developer_mode_status()
     except Exception:
         pass
 
@@ -80,14 +81,13 @@ def detect_device():
     try:
         mounter = MobileImageMounterService(lockdown=lockdown)
         if Version(ios_version) >= Version('17.0'):
-            ddi_mounted = mounter.is_image_mounted('Personalized')
+            ddi_mounted = await mounter.is_image_mounted('Personalized')
         else:
-            ddi_mounted = mounter.is_image_mounted('Developer')
+            ddi_mounted = await mounter.is_image_mounted('Developer')
     except Exception:
         pass
 
     return {
-        'lockdown': lockdown,
         'name': all_vals.get('DeviceName', '未知'),
         'version': ios_version,
         'product_type': lockdown.product_type,
@@ -98,14 +98,15 @@ def detect_device():
     }
 
 
-def enable_dev_mode(lockdown):
+async def enable_dev_mode(udid):
     """
     开启开发者模式。此函数会阻塞直到设备重启并确认完成。
     返回成功消息字符串。
     """
     try:
+        lockdown = await _create_lockdown(udid)
         amfi = AmfiService(lockdown)
-        amfi.enable_developer_mode(enable_post_restart=True)
+        await amfi.enable_developer_mode(enable_post_restart=True)
         return "开发者模式已成功开启。"
     except DeviceHasPasscodeSetError:
         raise DeviceOpsError(
@@ -159,12 +160,13 @@ def _find_bundled_personalized():
     return None
 
 
-def mount_ddi(lockdown):
+async def mount_ddi(udid):
     """
     挂载开发者磁盘映像 (DDI)。
     优先使用内置的 DDI 文件，无需网络下载。
     返回成功消息字符串。
     """
+    lockdown = await _create_lockdown(udid)
     ios_version = lockdown.product_version
 
     try:
@@ -178,16 +180,14 @@ def mount_ddi(lockdown):
                 )
             image_path, sig_path = paths
             mounter = DeveloperDiskImageMounter(lockdown=lockdown)
-            mounter.mount(image_path, sig_path)
+            await mounter.mount(image_path, sig_path)
         else:
             # iOS 17+：使用个性化 DDI（需要 TSS 签名，需联网）
             paths = _find_bundled_personalized()
             if paths is None:
                 raise DeviceOpsError("未找到内置的个性化开发者磁盘映像。")
             image, manifest, trustcache = paths
-            asyncio.run(
-                PersonalizedImageMounter(lockdown=lockdown).mount(image, manifest, trustcache)
-            )
+            await PersonalizedImageMounter(lockdown=lockdown).mount(image, manifest, trustcache)
 
         return "开发者磁盘映像挂载成功。"
 
