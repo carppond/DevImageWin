@@ -158,6 +158,17 @@ async def enable_dev_mode(udid):
         lockdown = await _create_lockdown(udid)
         amfi = AmfiService(lockdown)
 
+        # 第 0 步：先让「开发者模式」选项在设置中显示出来
+        # 即使后续自动开启失败（如有密码），用户也能在设置中找到开关
+        logger.info("enable_dev_mode: [0/5] 显示开发者模式选项...")
+        try:
+            result_reveal = amfi.reveal_developer_mode_option_in_ui()
+            if asyncio.iscoroutine(result_reveal):
+                await result_reveal
+            logger.info("enable_dev_mode: [0/5] 已显示开发者模式选项")
+        except Exception as e:
+            logger.warning(f"enable_dev_mode: [0/5] reveal 失败（可忽略）: {e}")
+
         # 第 1 步：发送开启命令（不等待重启后确认）
         logger.info("enable_dev_mode: [1/5] 发送开启命令...")
         await amfi.enable_developer_mode(enable_post_restart=False)
@@ -198,9 +209,11 @@ async def enable_dev_mode(udid):
         raise
     except DeviceHasPasscodeSetError:
         raise DeviceOpsError(
-            "设备设置了锁屏密码，无法自动开启开发者模式。\n"
-            "请在设备上手动开启：\n"
-            "设置 → 隐私与安全性 → 开发者模式"
+            "设备设置了锁屏密码，无法自动开启开发者模式。\n\n"
+            "已为您显示开发者模式选项，请在设备上手动开启：\n"
+            "设置 → 隐私与安全性 → 开发者模式\n\n"
+            "开启后设备会自动重启，重启完成并解锁后，\n"
+            "点击「检测设备」继续操作。"
         )
     except DeveloperModeError as e:
         raise DeviceOpsError(f"开启开发者模式失败：{e}")

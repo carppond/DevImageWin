@@ -15,7 +15,9 @@
       "Bash(ls:*)",
       "Bash(git tag:*)",
       "Bash(git push:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(curl:*)",
+      "Bash(gh search:*)"
     ]
   }
 }

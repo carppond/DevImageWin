@@ -34,18 +34,30 @@ except Exception as e:
     print(f"    获取状态失败: {e}")
     print("    继续尝试开启...")
 
-# 第 3 步：发送开启命令
-print("\n[3] 发送开启开发者模式命令 (enable_post_restart=False)...")
+# 第 3 步：显示开发者模式选项
+print("\n[3] 调用 reveal_developer_mode_option_in_ui()...")
 amfi = AmfiService(lockdown)
+try:
+    amfi.reveal_developer_mode_option_in_ui()
+    print("    已显示开发者模式选项")
+except Exception as e:
+    print(f"    reveal 失败（可忽略）: {e}")
+
+# 第 4 步：发送开启命令
+print("\n[4] 发送开启开发者模式命令 (enable_post_restart=False)...")
 try:
     amfi.enable_developer_mode(enable_post_restart=False)
     print("    命令发送成功，设备将重启")
 except Exception as e:
     print(f"    命令失败: {e}")
+    if "passcode" in str(e).lower() or "DeviceHasPasscodeSetError" in type(e).__name__:
+        print("\n    >>> 设备有锁屏密码，无法自动开启。")
+        print("    >>> 开发者模式选项已显示，请在设备上手动开启：")
+        print("    >>> 设置 → 隐私与安全性 → 开发者模式")
     exit(1)
 
-# 第 4 步：等待设备断开
-print("\n[4] 等待设备断开连接...")
+# 第 5 步：等待设备断开
+print("\n[5] 等待设备断开连接...")
 disconnected = False
 for i in range(30):
     try:
@@ -61,8 +73,8 @@ if not disconnected:
     print("    >>> 30秒内设备未断开，可能未重启")
     exit(1)
 
-# 第 5 步：等待设备重连
-print("\n[5] 等待设备重启后重连（请解锁手机）...")
+# 第 6 步：等待设备重连
+print("\n[6] 等待设备重启后重连（请解锁手机）...")
 new_lockdown = None
 for i in range(60):
     try:
@@ -79,12 +91,12 @@ if new_lockdown is None:
     print("    >>> 180秒内未能重连")
     exit(1)
 
-# 第 6 步：等待服务就绪
-print("\n[6] 等待系统服务就绪 (5秒)...")
+# 第 7 步：等待服务就绪
+print("\n[7] 等待系统服务就绪 (5秒)...")
 time.sleep(5)
 
-# 第 7 步：发送确认
-print("\n[7] 发送 enable_developer_mode_post_restart()...")
+# 第 8 步：发送确认
+print("\n[8] 发送 enable_developer_mode_post_restart()...")
 try:
     new_amfi = AmfiService(new_lockdown)
     new_amfi.enable_developer_mode_post_restart()
@@ -92,8 +104,8 @@ try:
 except Exception as e:
     print(f"    确认失败: {type(e).__name__}: {e}")
 
-# 第 8 步：验证
-print("\n[8] 验证开发者模式状态...")
+# 第 9 步：验证
+print("\n[9] 验证开发者模式状态...")
 time.sleep(3)
 try:
     check = create_using_usbmux(serial=udid, connection_type='USB', local_hostname=HOSTNAME)
