@@ -148,6 +148,31 @@ async def _wait_for_device_reconnect(udid, timeout=120):
     return None
 
 
+async def _verify_device_connection(udid):
+    """操作前验证设备连接，失败时给出明确的 USB 相关提示"""
+    try:
+        lockdown = await create_using_usbmux(
+            identifier=udid, connection_type='USB', local_hostname='DevImageWin'
+        )
+        logger.info(f"_verify_connection: 设备连接正常, udid={udid}")
+        return lockdown
+    except Exception as e:
+        logger.warning(f"_verify_connection: 设备连接失败: {e}")
+        raise DeviceOpsError(
+            "设备连接已断开。\n"
+            "请检查 USB 数据线是否松动，重新插拔后点击「检测设备」。"
+        )
+
+
+# 可重试的连接类异常
+_RETRYABLE_ERRORS = (
+    ConnectionAbortedError,
+    BrokenPipeError,
+    ConnectionTerminatedError,
+    ConnectionResetError,
+)
+
+
 async def enable_dev_mode(udid):
     """
     开启开发者模式。
@@ -155,6 +180,9 @@ async def enable_dev_mode(udid):
     """
     try:
         logger.info(f"enable_dev_mode: 开始, udid={udid}")
+
+        # 操作前验证连接
+        await _verify_device_connection(udid)
         lockdown = await _create_lockdown(udid)
         amfi = AmfiService(lockdown)
 
@@ -265,53 +293,73 @@ async def mount_ddi(udid):
     """
     挂载开发者磁盘映像 (DDI)。
     优先使用内置的 DDI 文件，无需网络下载。
+    连接中断时自动重试最多 3 次。
     返回成功消息字符串。
     """
-    logger.info(f"mount_ddi: 开始, udid={udid}")
-    lockdown = await _create_lockdown(udid)
-    ios_version = lockdown.product_version
-    logger.info(f"mount_ddi: iOS={ios_version}")
+    max_retries = 3
+    retry_delay = 3
 
-    try:
-        if Version(ios_version) < Version('17.0'):
-            # iOS < 17：使用传统 DeveloperDiskImage
-            paths = _find_bundled_ddi(ios_version)
-            if paths is None:
-                raise DeviceOpsError(
-                    f"未找到 iOS {ios_version} 对应的开发者磁盘映像。\n"
-                    "当前内置镜像支持 iOS 11.4 ~ 16.7。"
+    # 操作前验证连接
+    await _verify_device_connection(udid)
+
+    for attempt in range(max_retries):
+        try:
+            if attempt > 0:
+                logger.info(f"mount_ddi: 重试 {attempt}/{max_retries - 1}...")
+
+            logger.info(f"mount_ddi: 开始, udid={udid}")
+            lockdown = await _create_lockdown(udid)
+            ios_version = lockdown.product_version
+            logger.info(f"mount_ddi: iOS={ios_version}")
+
+            if Version(ios_version) < Version('17.0'):
+                # iOS < 17：使用传统 DeveloperDiskImage
+                paths = _find_bundled_ddi(ios_version)
+                if paths is None:
+                    raise DeviceOpsError(
+                        f"未找到 iOS {ios_version} 对应的开发者磁盘映像。\n"
+                        "当前内置镜像支持 iOS 11.4 ~ 16.7。"
+                    )
+                image_path, sig_path = paths
+                mounter = DeveloperDiskImageMounter(lockdown=lockdown)
+                await mounter.mount(image_path, sig_path)
+            else:
+                # iOS 17+：使用个性化 DDI（需要 TSS 签名，需联网）
+                paths = _find_bundled_personalized()
+                if paths is None:
+                    raise DeviceOpsError("未找到内置的个性化开发者磁盘映像。")
+                image, manifest, trustcache = paths
+                await PersonalizedImageMounter(lockdown=lockdown).mount(image, manifest, trustcache)
+
+            return "开发者磁盘映像挂载成功。"
+
+        except AlreadyMountedError:
+            return "开发者磁盘映像已挂载，无需重复操作。"
+        except DeveloperModeIsNotEnabledError:
+            raise DeviceOpsError("挂载失败：开发者模式未开启。\n请先开启开发者模式。")
+        except DeviceOpsError:
+            raise
+        except (RequestsConnectionError, ProxyError, URLError, ConnectionRefusedError) as e:
+            logger.error(f"mount_ddi: 网络错误: {e}")
+            raise DeviceOpsError(
+                "连接 Apple 服务器失败。\n"
+                "iOS 17+ 挂载 DDI 需要联网获取 Apple 签名。\n\n"
+                "请检查：\n"
+                "1. 电脑是否可以正常上网\n"
+                "2. 如果使用了代理（Clash/V2Ray 等），请确保代理软件已启动\n"
+                "3. 尝试关闭代理后重试"
+            )
+        except _RETRYABLE_ERRORS as e:
+            if attempt < max_retries - 1:
+                logger.warning(
+                    f"mount_ddi: 连接中断 ({type(e).__name__})，"
+                    f"{retry_delay}秒后重试 ({attempt + 1}/{max_retries - 1})"
                 )
-            image_path, sig_path = paths
-            mounter = DeveloperDiskImageMounter(lockdown=lockdown)
-            await mounter.mount(image_path, sig_path)
-        else:
-            # iOS 17+：使用个性化 DDI（需要 TSS 签名，需联网）
-            paths = _find_bundled_personalized()
-            if paths is None:
-                raise DeviceOpsError("未找到内置的个性化开发者磁盘映像。")
-            image, manifest, trustcache = paths
-            await PersonalizedImageMounter(lockdown=lockdown).mount(image, manifest, trustcache)
-
-        return "开发者磁盘映像挂载成功。"
-
-    except AlreadyMountedError:
-        return "开发者磁盘映像已挂载，无需重复操作。"
-    except DeveloperModeIsNotEnabledError:
-        raise DeviceOpsError("挂载失败：开发者模式未开启。\n请先开启开发者模式。")
-    except DeviceOpsError:
-        raise
-    except (RequestsConnectionError, ProxyError, URLError, ConnectionRefusedError, OSError) as e:
-        err_str = str(e)
-        logger.error(f"mount_ddi: 网络错误: {err_str}")
-        raise DeviceOpsError(
-            "连接 Apple 服务器失败。\n"
-            "iOS 17+ 挂载 DDI 需要联网获取 Apple 签名。\n\n"
-            "请检查：\n"
-            "1. 电脑是否可以正常上网\n"
-            "2. 如果使用了代理（Clash/V2Ray 等），请确保代理软件已启动\n"
-            "3. 尝试关闭代理后重试"
-        )
-    except (ConnectionAbortedError, BrokenPipeError, ConnectionTerminatedError):
-        raise DeviceOpsError("设备连接中断。\n请重新检测设备后重试。")
-    except Exception as e:
-        raise DeviceOpsError(f"挂载开发者磁盘映像时发生错误：{e}")
+                await asyncio.sleep(retry_delay)
+                continue
+            raise DeviceOpsError(
+                "设备连接中断，已重试仍然失败。\n"
+                "请检查 USB 数据线是否松动，重新插拔后重试。"
+            )
+        except Exception as e:
+            raise DeviceOpsError(f"挂载开发者磁盘映像时发生错误：{e}")
