@@ -163,12 +163,13 @@ async def _verify_device_connection(udid):
         )
 
 
-# 可重试的连接类异常
+# 可重试的连接类异常（含超时）
 _RETRYABLE_ERRORS = (
     ConnectionAbortedError,
     BrokenPipeError,
     ConnectionTerminatedError,
     ConnectionResetError,
+    asyncio.TimeoutError,
 )
 
 
@@ -300,11 +301,12 @@ async def mount_ddi(udid):
     """
     挂载开发者磁盘映像 (DDI)。
     优先使用内置的 DDI 文件，无需网络下载。
-    连接中断时自动重试最多 3 次。
+    连接中断或超时时自动重试最多 3 次。
     返回成功消息字符串。
     """
     max_retries = 3
     retry_delay = 3
+    mount_timeout = 60  # 单次挂载操作超时秒数
 
     # 操作前验证连接
     await _verify_device_connection(udid)
@@ -336,7 +338,10 @@ async def mount_ddi(udid):
                     )
                 image_path, sig_path = paths
                 mounter = DeveloperDiskImageMounter(lockdown=lockdown)
-                await mounter.mount(image_path, sig_path)
+                await asyncio.wait_for(
+                    mounter.mount(image_path, sig_path),
+                    timeout=mount_timeout,
+                )
             else:
                 # iOS 17+：使用个性化 DDI（需要 TSS 签名，需联网）
                 paths = _find_bundled_personalized()
@@ -350,7 +355,10 @@ async def mount_ddi(udid):
                         )
                     raise DeviceOpsError("未找到内置的个性化开发者磁盘映像。")
                 image, manifest, trustcache = paths
-                await PersonalizedImageMounter(lockdown=lockdown).mount(image, manifest, trustcache)
+                await asyncio.wait_for(
+                    PersonalizedImageMounter(lockdown=lockdown).mount(image, manifest, trustcache),
+                    timeout=mount_timeout,
+                )
 
             return "开发者磁盘映像挂载成功。"
 
@@ -372,14 +380,15 @@ async def mount_ddi(udid):
             )
         except _RETRYABLE_ERRORS as e:
             if attempt < max_retries - 1:
+                err_type = "超时" if isinstance(e, asyncio.TimeoutError) else f"连接中断 ({type(e).__name__})"
                 logger.warning(
-                    f"mount_ddi: 连接中断 ({type(e).__name__})，"
+                    f"mount_ddi: {err_type}，"
                     f"{retry_delay}秒后重试 ({attempt + 1}/{max_retries - 1})"
                 )
                 await asyncio.sleep(retry_delay)
                 continue
             raise DeviceOpsError(
-                "设备连接中断，已重试仍然失败。\n"
+                "挂载操作超时或连接中断，已重试仍然失败。\n"
                 "请检查 USB 数据线是否松动，重新插拔后重试。"
             )
         except Exception as e:
