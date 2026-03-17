@@ -218,18 +218,26 @@ async def enable_dev_mode(udid):
             )
         logger.info(f"enable_dev_mode: [3/5] 重连成功, version={new_lockdown.product_version}")
 
-        # 第 4 步：等几秒让系统服务完全就绪
-        logger.info("enable_dev_mode: [4/5] 等待服务就绪 (5秒)...")
-        time.sleep(5)
+        # 第 4 步：等待服务就绪并发送确认（重试最多 3 次）
+        for post_attempt in range(3):
+            wait_secs = 5 + post_attempt * 5  # 5s, 10s, 15s
+            logger.info(f"enable_dev_mode: [4/5] 等待服务就绪 ({wait_secs}秒)...")
+            await asyncio.sleep(wait_secs)
 
-        # 第 5 步：确认开发者模式
-        logger.info("enable_dev_mode: [5/5] 发送 post_restart 确认...")
-        new_amfi = AmfiService(new_lockdown)
-        result = new_amfi.enable_developer_mode_post_restart()
-        # 兼容 async 版本
-        if asyncio.iscoroutine(result):
-            await result
-        logger.info("enable_dev_mode: [5/5] 确认成功!")
+            logger.info(f"enable_dev_mode: [5/5] 发送 post_restart 确认 (尝试 {post_attempt + 1}/3)...")
+            try:
+                # 重新建立连接，避免使用过期的 lockdown
+                fresh_lockdown = await _create_lockdown(udid)
+                fresh_amfi = AmfiService(fresh_lockdown)
+                result = fresh_amfi.enable_developer_mode_post_restart()
+                if asyncio.iscoroutine(result):
+                    await result
+                logger.info("enable_dev_mode: [5/5] 确认成功!")
+                break
+            except Exception as e:
+                logger.warning(f"enable_dev_mode: [5/5] 确认失败 ({post_attempt + 1}/3): {e}")
+                if post_attempt == 2:
+                    raise
 
         return "开发者模式已成功开启。"
 
