@@ -22,7 +22,6 @@ from pymobiledevice3.exceptions import (
 )
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.services.amfi import AmfiService
-from pymobiledevice3.services.heartbeat import HeartbeatService
 from pymobiledevice3.services.mobile_image_mounter import (
     DeveloperDiskImageMounter,
     PersonalizedImageMounter,
@@ -324,6 +323,13 @@ async def mount_ddi(udid):
                 # iOS < 17：使用传统 DeveloperDiskImage
                 paths = _find_bundled_ddi(ios_version)
                 if paths is None:
+                    # 判断是否为 iOS 17+ 版本的 EXE（不含 legacy 镜像）
+                    legacy_dir = _get_bundled_data_dir() / 'DeveloperDiskImages'
+                    if not legacy_dir.exists():
+                        raise DeviceOpsError(
+                            f"当前程序为 iOS 17+ 版本，不支持 iOS {ios_version}。\n"
+                            "请下载 DevImageWin_Legacy 版本。"
+                        )
                     raise DeviceOpsError(
                         f"未找到 iOS {ios_version} 对应的开发者磁盘映像。\n"
                         "当前内置镜像支持 iOS 11.4 ~ 16.7。"
@@ -335,6 +341,13 @@ async def mount_ddi(udid):
                 # iOS 17+：使用个性化 DDI（需要 TSS 签名，需联网）
                 paths = _find_bundled_personalized()
                 if paths is None:
+                    # 判断是否为 Legacy 版本的 EXE（不含 personalized 镜像）
+                    personalized_dir = _get_bundled_data_dir() / 'PersonalizedImages'
+                    if not personalized_dir.exists():
+                        raise DeviceOpsError(
+                            f"当前程序为 Legacy 版本，不支持 iOS {ios_version}。\n"
+                            "请下载 DevImageWin_iOS17+ 版本。"
+                        )
                     raise DeviceOpsError("未找到内置的个性化开发者磁盘映像。")
                 image, manifest, trustcache = paths
                 await PersonalizedImageMounter(lockdown=lockdown).mount(image, manifest, trustcache)
