@@ -1,16 +1,32 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
 from PyInstaller.utils.hooks import copy_metadata
+
+build_target = os.environ.get('BUILD_TARGET', 'all')
+
+# 基础数据
+base_datas = [
+    ('apple_driver', 'apple_driver'),
+    *copy_metadata('pyimg4'),
+    *copy_metadata('ipsw_parser'),
+]
+
+# 根据构建目标选择 DDI 数据
+if build_target == 'ios17plus':
+    datas = base_datas + [('ddi_data/PersonalizedImages', 'ddi_data/PersonalizedImages')]
+    exe_name = 'DevImageWin_iOS17+'
+elif build_target == 'legacy':
+    datas = base_datas + [('ddi_data/DeveloperDiskImages', 'ddi_data/DeveloperDiskImages')]
+    exe_name = 'DevImageWin_Legacy'
+else:
+    datas = base_datas + [('ddi_data', 'ddi_data')]
+    exe_name = 'DevImageWin'
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        ('ddi_data', 'ddi_data'),
-        ('apple_driver', 'apple_driver'),
-        *copy_metadata('pyimg4'),
-        *copy_metadata('ipsw_parser'),
-    ],
+    datas=datas,
     hiddenimports=[
         'pyimg4',
         'ipsw_parser',
@@ -69,7 +85,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='DevImageWin',
+    name=exe_name,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

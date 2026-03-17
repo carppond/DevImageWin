@@ -60,14 +60,27 @@ jobs:
           }
           Remove-Item -Recurse -Force itunes_extracted, iTunes64Setup.exe
 
-      - name: Build EXE
-        run: python -m PyInstaller build.spec --clean --noconfirm
+      - name: Build iOS 17+ version
+        run: |
+          $env:BUILD_TARGET = "ios17plus"
+          python -m PyInstaller build.spec --clean --noconfirm
 
-      - name: Upload artifact
+      - name: Build Legacy version (iOS 11.4-16.7)
+        run: |
+          $env:BUILD_TARGET = "legacy"
+          python -m PyInstaller build.spec --clean --noconfirm
+
+      - name: List build output
+        run: |
+          dir dist
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: DevImageWin
-          path: dist/DevImageWin.exe
+          path: |
+            dist/DevImageWin_iOS17+.exe
+            dist/DevImageWin_Legacy.exe
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -79,6 +92,15 @@ jobs:
 
             A Windows GUI tool for iOS developers to enable Developer Mode and mount Developer Disk Image — no Xcode or macOS required.
 
+            ### Downloads
+
+            | File | iOS Version | Size |
+            |------|------------|------|
+            | `DevImageWin_iOS17+.exe` | iOS 17.0 and above | ~100MB |
+            | `DevImageWin_Legacy.exe` | iOS 11.4 – 16.7 | ~550MB |
+
+            > **Most users should download `DevImageWin_iOS17+.exe`** — it covers all modern iOS devices.
+
             ### Features
 
             - **Detect iOS Device** — Auto-detect USB-connected iPhone/iPad, display device name, iOS version, model, UDID
@@ -88,7 +110,7 @@ jobs:
 
             ### Usage
 
-            1. Download `DevImageWin.exe` below
+            1. Download the EXE matching your iOS version
             2. Connect your iPhone/iPad to PC via USB
             3. Run the app, click **Detect Device**
             4. Follow the prompts to enable Developer Mode and mount the disk image
@@ -105,4 +127,6 @@ jobs:
             - After enabling Developer Mode, the device will restart — wait for it to finish and unlock before detecting again
             - If mount fails with a network error, check your internet connection or disable proxy and retry
             - Log file `DevImageWin.log` is generated next to the exe for troubleshooting
-          files: dist/DevImageWin.exe
+          files: |
+            dist/DevImageWin_iOS17+.exe
+            dist/DevImageWin_Legacy.exe
